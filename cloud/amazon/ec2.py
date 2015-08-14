@@ -205,6 +205,13 @@ options:
     required: false
     default: no
     choices: [ "yes", "no" ]
+  instance_initiated_shutdown_behavior:
+    version_added: "2.0"
+    description:
+      - Set the shutdown behavior
+    required: false
+    default: 'stop'
+    choices: [ "stop", "terminate" ]
   state:
     version_added: "1.3"
     description:
@@ -704,6 +711,7 @@ def create_block_device(module, ec2, volume):
                            delete_on_termination=volume.get('delete_on_termination', False),
                            iops=volume.get('iops'),
                            encrypted=volume.get('encrypted', None))
+
 def boto_supports_param_in_spot_request(ec2, param):
     """
     Check if Boto library has a <param> in its request_spot_instances() method. For example, the placement_group parameter wasn't added until 2.3.0.
@@ -817,6 +825,7 @@ def create_instances(module, ec2, vpc, override_count=None):
     count_tag = module.params.get('count_tag')
     source_dest_check = module.boolean(module.params.get('source_dest_check'))
     termination_protection = module.boolean(module.params.get('termination_protection'))
+    instance_initiated_shutdown_behavior = module.params.get('instance_initiated_shutdown_behavior')
 
     # group_id and group_name are exclusive of each other
     if group_id and group_name:
@@ -950,6 +959,8 @@ def create_instances(module, ec2, vpc, override_count=None):
                       private_ip_address = private_ip,
                     ))
 
+                params['instance_initiated_shutdown_behavior'] = instance_initiated_shutdown_behavior
+
                 res = ec2.run_instances(**params)
                 instids = [ i.id for i in res.instances ]
                 while True:
@@ -983,6 +994,12 @@ def create_instances(module, ec2, vpc, override_count=None):
                 elif placement_group :
                         module.fail_json(
                             msg="placement_group parameter requires Boto version 2.3.0 or higher.")
+
+                if boto_supports_param_in_spot_request(ec2, 'instance_initiated_shutdown_behavior'):
+                    params['instance_initiated_shutdown_behavior'] = instance_initiated_shutdown_behavior
+                elif instance_initiated_shutdown_behavior :
+                        module.fail_json(
+                            msg="instance_initiated_shutdown_behavior parameter is not supported by your Boto version.")
 
                 params.update(dict(
                     count = count_remaining,
@@ -1250,6 +1267,7 @@ def main():
             instance_ids = dict(type='list', aliases=['instance_id']),
             source_dest_check = dict(type='bool', default=True),
             termination_protection = dict(type='bool', default=False),
+            instance_initiated_shutdown_behavior = dict(default='stop', choices=['stop', 'terminate']),
             state = dict(default='present', choices=['present', 'absent', 'running', 'stopped']),
             exact_count = dict(type='int', default=None),
             count_tag = dict(),
